@@ -37,6 +37,17 @@ pub const ANTHROPIC_VERSION_2023_06_01: &str = "2023-06-01";
 pub const ANTHROPIC_VERSION_LATEST: &str = ANTHROPIC_VERSION_2023_06_01;
 const EMPTY_RESPONSE_ERROR: &str = "Response contained no message or tool call (empty)";
 pub(crate) const ANTHROPIC_RAW_CONTENT_KEY: &str = "anthropic_content";
+/// Key under which a caller-chosen [`CacheControl`] marker is carried on a
+/// generic [`message::Text`]/[`message::Image`]/[`message::Document`] block via
+/// `additional_params`, so it survives conversion through the provider-agnostic
+/// message surface and lands on the corresponding Anthropic content block.
+///
+/// This is how a breakpoint is placed at a *chosen* position in the message
+/// history (rather than the fixed positions chosen by [`CompletionModel::with_prompt_caching`]).
+/// The marker's presence is the opt-in — no model-level flag is required, and
+/// manual placement should be used with `with_prompt_caching` left disabled, as
+/// that mode relocates message-level markers.
+pub(crate) const ANTHROPIC_CACHE_CONTROL_KEY: &str = "anthropic_cache_control";
 
 pub trait AnthropicCompatibleProvider: Provider {
     const PROVIDER_NAME: &'static str;
@@ -737,6 +748,30 @@ fn extract_anthropic_doc_params(
     Ok((title, context, citations))
 }
 
+/// Extract a caller-placed [`CacheControl`] breakpoint from a content block's
+/// `additional_params`, stored under [`ANTHROPIC_CACHE_CONTROL_KEY`].
+///
+/// Returns `Ok(None)` when no marker is present. Errors if the marker is present
+/// but not a valid [`CacheControl`] payload.
+fn extract_anthropic_cache_control(
+    additional_params: &Option<serde_json::Value>,
+) -> Result<Option<CacheControl>, MessageError> {
+    let Some(value) = additional_params
+        .as_ref()
+        .and_then(|value| value.get(ANTHROPIC_CACHE_CONTROL_KEY))
+    else {
+        return Ok(None);
+    };
+
+    serde_json::from_value::<CacheControl>(value.clone())
+        .map(Some)
+        .map_err(|err| {
+            MessageError::ConversionError(format!(
+                "`{ANTHROPIC_CACHE_CONTROL_KEY}` metadata is not a valid CacheControl: {err}"
+            ))
+        })
+}
+
 /// Extract Anthropic citations attached to a generic [`message::Text`] block.
 ///
 /// Citations are returned by Claude on assistant text blocks when the request
@@ -794,11 +829,12 @@ fn anthropic_text_content_from_message_text(text: message::Text) -> Result<Conte
         return Ok(raw_content);
     }
 
+    let cache_control = extract_anthropic_cache_control(&text.additional_params)?;
     let citations = extract_anthropic_text_citations(&text)?;
     Ok(Content::Text {
         text: text.text,
         citations,
-        cache_control: None,
+        cache_control,
     })
 }
 
@@ -836,6 +872,74 @@ fn anthropic_raw_content_to_message_text(content: Content) -> Result<message::Te
             ANTHROPIC_RAW_CONTENT_KEY: raw_content
         })),
     })
+}
+
+/// Merge a single key/value into a content block's `additional_params` object,
+/// preserving any sibling provider-specific fields already present.
+fn merge_additional_param(
+    additional_params: Option<serde_json::Value>,
+    key: &str,
+    value: serde_json::Value,
+) -> serde_json::Value {
+    let mut map = match additional_params {
+        Some(serde_json::Value::Object(map)) => map,
+        _ => serde_json::Map::new(),
+    };
+    map.insert(key.to_string(), value);
+    serde_json::Value::Object(map)
+}
+
+/// Attach an Anthropic prompt-cache breakpoint to a generic [`message::Text`]
+/// block. The marker rides on `additional_params` and is applied to the
+/// corresponding Anthropic content block during conversion, placing a cache
+/// breakpoint at this exact position in the history.
+///
+/// Use with [`CompletionModel::with_prompt_caching`] left disabled — manual mode
+/// relocates message-level markers.
+pub fn anthropic_text_with_cache_control(
+    mut text: message::Text,
+    cache_control: CacheControl,
+) -> Result<message::Text, MessageError> {
+    text.additional_params = Some(merge_additional_param(
+        text.additional_params,
+        ANTHROPIC_CACHE_CONTROL_KEY,
+        serde_json::to_value(cache_control).map_err(|err| {
+            MessageError::ConversionError(format!("Failed to serialize CacheControl: {err}"))
+        })?,
+    ));
+    Ok(text)
+}
+
+/// Attach an Anthropic prompt-cache breakpoint to a generic [`message::Image`]
+/// block. See [`anthropic_text_with_cache_control`].
+pub fn anthropic_image_with_cache_control(
+    mut image: message::Image,
+    cache_control: CacheControl,
+) -> Result<message::Image, MessageError> {
+    image.additional_params = Some(merge_additional_param(
+        image.additional_params,
+        ANTHROPIC_CACHE_CONTROL_KEY,
+        serde_json::to_value(cache_control).map_err(|err| {
+            MessageError::ConversionError(format!("Failed to serialize CacheControl: {err}"))
+        })?,
+    ));
+    Ok(image)
+}
+
+/// Attach an Anthropic prompt-cache breakpoint to a generic [`message::Document`]
+/// block. See [`anthropic_text_with_cache_control`].
+pub fn anthropic_document_with_cache_control(
+    mut document: message::Document,
+    cache_control: CacheControl,
+) -> Result<message::Document, MessageError> {
+    document.additional_params = Some(merge_additional_param(
+        document.additional_params,
+        ANTHROPIC_CACHE_CONTROL_KEY,
+        serde_json::to_value(cache_control).map_err(|err| {
+            MessageError::ConversionError(format!("Failed to serialize CacheControl: {err}"))
+        })?,
+    ));
+    Ok(document)
 }
 
 fn anthropic_document_additional_params(
@@ -1132,10 +1236,10 @@ impl TryFrom<message::Message> for Message {
             message::Message::User { content } => Message {
                 role: Role::User,
                 content: content.try_map(|content| match content {
-                    message::UserContent::Text(message::Text { text, .. }) => Ok(Content::Text {
-                        text,
+                    message::UserContent::Text(text) => Ok(Content::Text {
+                        cache_control: extract_anthropic_cache_control(&text.additional_params)?,
+                        text: text.text,
                         citations: Vec::new(),
-                        cache_control: None,
                     }),
                     message::UserContent::ToolResult(message::ToolResult {
                         id, content, ..
@@ -1168,8 +1272,13 @@ impl TryFrom<message::Message> for Message {
                         cache_control: None,
                     }),
                     message::UserContent::Image(message::Image {
-                        data, media_type, ..
+                        data,
+                        media_type,
+                        additional_params,
+                        ..
                     }) => {
+                        let cache_control =
+                            extract_anthropic_cache_control(&additional_params)?;
                         let source = match data {
                             DocumentSourceKind::Base64(data) => {
                                 let media_type =
@@ -1196,7 +1305,7 @@ impl TryFrom<message::Message> for Message {
 
                         Ok(Content::Image {
                             source,
-                            cache_control: None,
+                            cache_control,
                         })
                     }
                     message::UserContent::Document(message::Document {
@@ -1204,6 +1313,8 @@ impl TryFrom<message::Message> for Message {
                         media_type,
                         additional_params,
                     }) => {
+                        let cache_control =
+                            extract_anthropic_cache_control(&additional_params)?;
                         let (title, context, citations) =
                             extract_anthropic_doc_params(additional_params)?;
 
@@ -1213,7 +1324,7 @@ impl TryFrom<message::Message> for Message {
                                 title,
                                 context,
                                 citations,
-                                cache_control: None,
+                                cache_control: cache_control.clone(),
                             });
                         }
 
@@ -1265,7 +1376,7 @@ impl TryFrom<message::Message> for Message {
                             title,
                             context,
                             citations,
-                            cache_control: None,
+                            cache_control,
                         })
                     }
                     message::UserContent::Audio { .. } => Err(MessageError::ConversionError(
@@ -3058,6 +3169,142 @@ mod tests {
             .and_then(|content| content.last())
             .and_then(|content| content.get("cache_control"))
             .is_some()
+    }
+
+    fn user_text_message(text: &str, cache_control: Option<CacheControl>) -> message::Message {
+        let mut block = message::Text::new(text);
+        if let Some(cache_control) = cache_control {
+            block = anthropic_text_with_cache_control(block, cache_control).unwrap();
+        }
+        message::Message::User {
+            content: OneOrMany::one(message::UserContent::Text(block)),
+        }
+    }
+
+    fn request_value_with_history(history: Vec<message::Message>) -> serde_json::Value {
+        let request = AnthropicCompletionRequest::try_from(AnthropicRequestParams {
+            model: CLAUDE_OPUS_4_8,
+            request: completion_request_with_history(history, Some("System prompt".to_string())),
+            prompt_caching: false,
+            automatic_caching: false,
+            automatic_caching_ttl: None,
+        })
+        .unwrap();
+        serde_json::to_value(request).unwrap()
+    }
+
+    #[test]
+    fn manual_cache_control_lands_on_chosen_message_position() {
+        let value = request_value_with_history(vec![
+            user_text_message("turn one", None),
+            message::Message::assistant("reply one"),
+            user_text_message("turn two", Some(CacheControl::ephemeral())),
+            message::Message::assistant("reply two"),
+        ]);
+
+        let messages = value["messages"].as_array().unwrap();
+        // The chosen position carries the breakpoint...
+        assert_eq!(
+            messages[2]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        // ...and no other position does (placement is exactly where we asked).
+        assert!(messages[0]["content"][0].get("cache_control").is_none());
+        assert!(messages[1]["content"][0].get("cache_control").is_none());
+        assert!(messages[3]["content"][0].get("cache_control").is_none());
+        // With prompt_caching disabled, rig adds no markers of its own.
+        assert!(!system_has_cache_control(&value));
+        assert!(!last_message_has_cache_control(&value));
+    }
+
+    #[test]
+    fn manual_cache_control_serializes_extended_ttl() {
+        let value = request_value_with_history(vec![user_text_message(
+            "cache me",
+            Some(CacheControl::ephemeral_1h()),
+        )]);
+
+        let block = &value["messages"][0]["content"][0];
+        assert_eq!(block["cache_control"]["type"], "ephemeral");
+        assert_eq!(block["cache_control"]["ttl"], "1h");
+    }
+
+    #[test]
+    fn manual_cache_control_lands_on_assistant_text() {
+        let assistant_text = anthropic_text_with_cache_control(
+            message::Text::new("reply"),
+            CacheControl::ephemeral(),
+        )
+        .unwrap();
+        let value = request_value_with_history(vec![
+            user_text_message("question", None),
+            message::Message::Assistant {
+                id: None,
+                content: OneOrMany::one(message::AssistantContent::Text(assistant_text)),
+            },
+        ]);
+
+        assert_eq!(
+            value["messages"][1]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+    }
+
+    #[test]
+    fn manual_cache_control_lands_on_document_block() {
+        let document = anthropic_document_with_cache_control(
+            message::Document {
+                data: message::DocumentSourceKind::String("document body".to_string()),
+                media_type: Some(message::DocumentMediaType::TXT),
+                additional_params: None,
+            },
+            CacheControl::ephemeral(),
+        )
+        .unwrap();
+        let value = request_value_with_history(vec![message::Message::User {
+            content: OneOrMany::one(message::UserContent::Document(document)),
+        }]);
+
+        assert_eq!(
+            value["messages"][0]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+    }
+
+    #[test]
+    fn manual_cache_control_rejects_invalid_payload() {
+        let mut block = message::Text::new("hi");
+        block.additional_params = Some(serde_json::json!({
+            ANTHROPIC_CACHE_CONTROL_KEY: "not-a-cache-control"
+        }));
+
+        let result = AnthropicCompletionRequest::try_from(AnthropicRequestParams {
+            model: CLAUDE_OPUS_4_8,
+            request: completion_request_with_history(
+                vec![message::Message::User {
+                    content: OneOrMany::one(message::UserContent::Text(block)),
+                }],
+                None,
+            ),
+            prompt_caching: false,
+            automatic_caching: false,
+            automatic_caching_ttl: None,
+        });
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cache_control_helper_preserves_sibling_additional_params() {
+        let mut block = message::Text::new("hi");
+        block.additional_params = Some(serde_json::json!({ "citations": [] }));
+
+        let block = anthropic_text_with_cache_control(block, CacheControl::ephemeral_1h()).unwrap();
+        let params = block.additional_params.unwrap();
+
+        assert!(params.get("citations").is_some());
+        assert_eq!(params[ANTHROPIC_CACHE_CONTROL_KEY]["type"], "ephemeral");
+        assert_eq!(params[ANTHROPIC_CACHE_CONTROL_KEY]["ttl"], "1h");
     }
 
     #[test]
