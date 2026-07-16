@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.41.0](https://github.com/dgrijalva/rig/compare/rig-core-v0.40.0...rig-core-v0.41.0) - 2026-07-16
+
+### Added
+
+- *(telemetry)* make sensitive span content opt-in ([#2151](https://github.com/dgrijalva/rig/pull/2151)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(openai)* expose complete Responses reasoning metadata ([#2112](https://github.com/dgrijalva/rig/pull/2112)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(openai)* support GPT-5.6 models and reasoning controls ([#2106](https://github.com/dgrijalva/rig/pull/2106)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+
+### Fixed
+
+- *(anthropic)* support code execution tool results ([#2158](https://github.com/dgrijalva/rig/pull/2158)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(agent)* prevent structured-output tools from shadowing real tools ([#2146](https://github.com/dgrijalva/rig/pull/2146)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(gemini)* preserve image generation error envelopes ([#2147](https://github.com/dgrijalva/rig/pull/2147)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(core)* make Extractor usage accounting match its docs, drop per-attempt clones, fix retry log ([#2109](https://github.com/dgrijalva/rig/pull/2109)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+
+### Other
+
+- Add rig-candle local inference and WASM chat ([#2155](https://github.com/dgrijalva/rig/pull/2155)) (by [gold-silver-copper](https://github.com/gold-silver-copper)) - #2155
+- *(providers)* share embedding transport ([#2157](https://github.com/dgrijalva/rig/pull/2157)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- Simplify tool execution and hook APIs ([#2132](https://github.com/dgrijalva/rig/pull/2132)) (by [gold-silver-copper](https://github.com/gold-silver-copper)) - #2132
+- *(telemetry)* centralize completion span lifecycle ([#2115](https://github.com/dgrijalva/rig/pull/2115)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(core)* [**breaking**] make core errors non-exhaustive ([#2114](https://github.com/dgrijalva/rig/pull/2114)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(core)* deduplicate HttpClientExt implementations ([#2113](https://github.com/dgrijalva/rig/pull/2113)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- bump rmcp depency to latest ([#2103](https://github.com/dgrijalva/rig/pull/2103)) (by [ThomasMarches](https://github.com/ThomasMarches)) - #2103
+- *(core)* collapse Extractor's four retry loops into one private helper ([#2107](https://github.com/dgrijalva/rig/pull/2107)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+
+### Contributors
+
+* [gold-silver-copper](https://github.com/gold-silver-copper)
+* [ThomasMarches](https://github.com/ThomasMarches)
 
 ### Changed
 

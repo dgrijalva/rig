@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.41.0](https://github.com/dgrijalva/rig/compare/v0.40.0...v0.41.0) - 2026-07-16
+
+### Added
+
+- *(telemetry)* make sensitive span content opt-in ([#2151](https://github.com/dgrijalva/rig/pull/2151)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(openai)* expose complete Responses reasoning metadata ([#2112](https://github.com/dgrijalva/rig/pull/2112)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(openai)* support GPT-5.6 models and reasoning controls ([#2106](https://github.com/dgrijalva/rig/pull/2106)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+
+### Fixed
+
+- *(anthropic)* support code execution tool results ([#2158](https://github.com/dgrijalva/rig/pull/2158)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(aws)* remove legacy rustls connector ([#2152](https://github.com/dgrijalva/rig/pull/2152)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(release)* avoid contributor mention notifications ([#2110](https://github.com/dgrijalva/rig/pull/2110)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+
+### Other
+
+- Add rig-candle local inference and WASM chat ([#2155](https://github.com/dgrijalva/rig/pull/2155)) (by [gold-silver-copper](https://github.com/gold-silver-copper)) - #2155
+- remove AI assistance policy ([#2159](https://github.com/dgrijalva/rig/pull/2159)) (by [gold-silver-copper](https://github.com/gold-silver-copper)) - #2159
+- Simplify tool execution and hook APIs ([#2132](https://github.com/dgrijalva/rig/pull/2132)) (by [gold-silver-copper](https://github.com/gold-silver-copper)) - #2132
+- *(telemetry)* centralize completion span lifecycle ([#2115](https://github.com/dgrijalva/rig/pull/2115)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- *(core)* [**breaking**] make core errors non-exhaustive ([#2114](https://github.com/dgrijalva/rig/pull/2114)) (by [gold-silver-copper](https://github.com/gold-silver-copper))
+- bump rmcp depency to latest ([#2103](https://github.com/dgrijalva/rig/pull/2103)) (by [ThomasMarches](https://github.com/ThomasMarches)) - #2103
+- update README links to new rig.rs/docs URL structure ([#2105](https://github.com/dgrijalva/rig/pull/2105)) (by [gold-silver-copper](https://github.com/gold-silver-copper)) - #2105
+
+### Contributors
+
+* [gold-silver-copper](https://github.com/gold-silver-copper)
+* [ThomasMarches](https://github.com/ThomasMarches)
 
 ### Fixed
 
